@@ -1,48 +1,137 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Elegant System — Products & Orders
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A small Laravel app for managing products and orders. Placing an order reduces stock, cancelling an order puts the stock back, and the inventory stays correct even when two requests hit the same product at the same time.
 
-## About Laravel
+I focused on correctness and data integrity. The UI is kept simple (Blade + Bootstrap).
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Requirements
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- PHP 8.3+
+- Composer
+- MySQL 8
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Setup
 
-## Learning Laravel
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+```
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+Create an empty MySQL database (the example `.env` uses `elegant_system`) and set your database details in `.env` (`DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`), then:
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+```bash
+php artisan migrate --seed
+php artisan serve
+```
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+Open http://localhost:8000. The seeder creates two users, and the login page has a small "Demo accounts" box that fills the form for you:
 
+| Email | Password |
+|---|---|
+| admin@example.com | 123456 |
+| user@example.com | 123456 |
 
-## Contributing
+Products are not seeded. Add a few from the Products page first.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Running the tests
 
-## Code of Conduct
+```bash
+php artisan test
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+By default the tests use SQLite in memory (see `phpunit.xml`), so they don't touch your data. To run the same tests on MySQL, create an empty test database and point the tests at it:
 
-## Security Vulnerabilities
+```bash
+DB_CONNECTION=mysql DB_DATABASE=elegant_test php artisan test
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+On Windows PowerShell:
 
-## License
+```powershell
+$env:DB_CONNECTION="mysql"; $env:DB_DATABASE="elegant_test"; php artisan test
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
-# elegantSystem
+The tests are in `tests/Feature`:
+
+- `OrderTest.php`
+  - successful order (server-side total, duplicate rows merged, stock reduced)
+  - insufficient stock
+  - cancel and restore stock
+  - cancelling twice doesn't restore stock twice
+  - a completed order can't be cancelled
+  - a failed order leaves no partial changes, including a failure in the middle of saving the items
+- `ProductTest.php`: SKU from name, duplicate names, negative price/stock
+- `ApiTest.php`: the public endpoints and their pagination
+
+## How it works
+
+### Products
+
+A product has a name, SKU, price and stock. The SKU is generated from the name (`Wireless Mouse` becomes `WIRELESS-MOUSE`), and both the name and the SKU have a unique index. Price and stock are validated with `min:0`, and the columns are unsigned, so MySQL rejects a negative value even if it comes from somewhere other than the app.
+
+### Placing an order
+
+`OrderController@store` does the following inside one transaction:
+
+1. Merge duplicate lines. If the same product is sent twice, the quantities are added together.
+2. Lock the product rows with `lockForUpdate()`, always in product id order.
+3. Check stock for every product first. If any of them is short, roll back and return a 422 that lists what's missing. Nothing has been written at this point.
+4. Calculate the total from the prices in the database. A total sent by the client is ignored.
+5. Create the order and its items, and decrement the stock.
+6. Commit.
+
+Each order item stores the `unit_price` at the time of the order, so changing a product's price later doesn't change old orders.
+
+If something unexpected fails, the transaction is rolled back, the real error is written to `storage/logs/laravel.log`, and the user only gets "Something went wrong, please try again." (`Controller::serverError()`).
+
+### Concurrent orders
+
+Because the product rows are locked, a second order for the same product waits until the first one commits, and then reads the reduced stock. Stock can't go negative this way. Locking in id order avoids deadlocks when two orders contain the same products in a different order.
+
+### Cancelling
+
+`OrderController@cancel` locks the order row first, then checks the status. A cancelled order can't be cancelled again, and a completed order can't be cancelled. So if the cancel button is clicked twice, the second request sees the order is already cancelled, and the stock is restored only once.
+
+### Order status
+
+A new order is **Active**. An active order can be **Completed** (`OrderController@complete`) or **Cancelled** (`OrderController@cancel`, which also returns the stock). Completed and Cancelled are final: they can't be completed or cancelled again. Both actions lock the order row and check `Order::isActive()` on the server, so a disabled button forced on in the browser still gets refused.
+
+### Live stock check
+
+On the create order screen, each row asks the server for the price, the stock and the line total while you type (debounced, through `GET /order-check-stock`). The same product can be added in more than one row; the stock check then uses the total of those rows, and on save the server adds them into one order line. If the quantity is more than the stock, the field is marked red and cleared. This only helps the user; the real check is the one in `store`.
+
+## Public API
+
+Two read-only endpoints. They need no login and return 100 records per page (`?page=2` for the next page):
+
+| Endpoint | Notes |
+|---|---|
+| `GET /api/users` | id, name, email, created_at |
+| `GET /api/orders` | orders with their items; optional `?status=` (1 Active, 2 Completed, 3 Cancelled) |
+
+They are public by request and only return safe fields (no passwords or tokens).
+
+## Project structure
+
+```
+app/Http/Controllers/
+    LoginController.php     login / logout
+    HomeController.php      dashboard
+    ProductController.php   product list, create, edit
+    OrderController.php     order list, create, stock check, complete, cancel
+    ApiController.php       public users / orders API
+app/Models/                 User, Product, Order, OrderItem
+database/migrations/        products, orders, order_items
+resources/views/            Blade views (layout, products, orders)
+routes/web.php              app routes (behind auth)
+routes/api.php              public API
+tests/Feature/              feature tests
+```
+
+## Assumptions
+
+- Stock is reduced when the order is placed (Active), not when it's completed. Cancelling returns it.
+- Products can't be deleted. It wasn't part of the task, and deleting a product that has orders would break the order history (the foreign key also prevents it).
+- Renaming a product also changes its SKU, since the SKU comes from the name. Orders reference products by id, so existing orders are not affected.
+- Money uses `decimal(12,2)`, and totals are rounded to 2 decimals on the server.
