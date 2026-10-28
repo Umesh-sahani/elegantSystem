@@ -23,7 +23,7 @@
                 <span class="form-head-icon"><i class="bi bi-pencil-square"></i></span>
                 <div>
                     <div class="form-head-title">Edit Product</div>
-                    <div class="form-head-sub">Update name, price or stock</div>
+                    <div class="form-head-sub">Update name, SKU, price or stock</div>
                 </div>
             </div>
         </div>
@@ -32,13 +32,22 @@
             <div class="card-body">
                 <div class="row g-3">
                     <div class="col-12">
-                        <label class="form-label">Product Name <span class="text-danger">*</span> <small class="text-muted fw-normal">(must be unique, SKU is made from it)</small></label>
+                        <label class="form-label">Product Name <span class="text-danger">*</span></label>
                         <div class="input-group has-validation">
                             <span class="input-group-text"><i class="bi bi-tag"></i></span>
                             <input autocomplete="off" class="form-control" name="name" type="text" value="{{ $product->name }}" />
                             <div class="invalid-feedback" id="err-name"></div>
                         </div>
-                        <div class="form-text">Current SKU: <code>{{ $product->sku }}</code></div>
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label">SKU <span class="text-danger">*</span> <small class="text-muted fw-normal">(must be unique)</small></label>
+                        <div class="input-group has-validation">
+                            <span class="input-group-text"><i class="bi bi-upc-scan"></i></span>
+                            <input autocomplete="off" class="form-control text-uppercase" name="sku" type="text" maxlength="50" value="{{ $product->sku }}" />
+                            <div class="invalid-feedback" id="err-sku"></div>
+                        </div>
+                        <div class="form-text">Saved in upper case. Orders keep working after a change, they link by product id.</div>
                     </div>
 
                     <div class="col-sm-6">
@@ -73,11 +82,6 @@
 @section('customJS')
     <script>
         function showErr(field, msg) {
-            // sku comes from name: show its error under name, unless name already has an error
-            if (field === 'sku') {
-                if ($('[name="name"]').hasClass('is-invalid')) return;
-                field = 'name';
-            }
             $('[name="' + field + '"]').addClass('is-invalid');
             $('#err-' + field).text(msg);
         }

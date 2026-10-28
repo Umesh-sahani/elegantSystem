@@ -61,14 +61,14 @@ The tests are in `tests/Feature`:
   - cancelling twice doesn't restore stock twice
   - a completed order can't be cancelled
   - a failed order leaves no partial changes, including a failure in the middle of saving the items
-- `ProductTest.php`: SKU from name, duplicate names, negative price/stock
+- `ProductTest.php`: SKU entered by the user and upper-cased, SKU required, duplicate SKU on create and update, same name with different SKUs, negative price/stock
 - `ApiTest.php`: the public endpoints and their pagination
 
 ## How it works
 
 ### Products
 
-A product has a name, SKU, price and stock. The SKU is generated from the name (`Wireless Mouse` becomes `WIRELESS-MOUSE`), and both the name and the SKU have a unique index. Price and stock are validated with `min:0`, and the columns are unsigned, so MySQL rejects a negative value even if it comes from somewhere other than the app.
+A product has a name, SKU, price and stock. The SKU is entered by the user, trimmed and stored in upper case (`pen-blue-02` becomes `PEN-BLUE-02`), and it has a unique index plus a `unique` validation rule. The name is not unique: two products may share a name (two "Pen" products with SKUs `PEN-BLUE-01` and `PEN-BLUE-02`), and the order form shows each product as `Name (SKU) - Stock: N` so they can be told apart. Price and stock are validated with `min:0`, and the columns are unsigned, so MySQL rejects a negative value even if it comes from somewhere other than the app.
 
 ### Placing an order
 
@@ -133,5 +133,5 @@ tests/Feature/              feature tests
 
 - Stock is reduced when the order is placed (Active), not when it's completed. Cancelling returns it.
 - Products can't be deleted. It wasn't part of the task, and deleting a product that has orders would break the order history (the foreign key also prevents it).
-- Renaming a product also changes its SKU, since the SKU comes from the name. Orders reference products by id, so existing orders are not affected.
+- The SKU can be edited like any other field. Orders reference products by id, so existing orders are not affected by a name or SKU change.
 - Money uses `decimal(12,2)`, and totals are rounded to 2 decimals on the server.

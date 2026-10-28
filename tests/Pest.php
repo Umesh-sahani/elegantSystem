@@ -10,12 +10,12 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
 
-// small helper so tests read like the requirement
-function createProduct(string $name, $price, int $stock): Product
+// small helper so tests read like the requirement (SKU defaults to the name in upper case, e.g. Pen -> PEN)
+function createProduct(string $name, $price, int $stock, ?string $sku = null): Product
 {
     return Product::create([
         'name' => $name,
-        'sku' => Str::upper(Str::slug($name)),
+        'sku' => $sku ?? Str::upper(Str::slug($name)),
         'price' => $price,
         'stock_qty' => $stock,
     ]);

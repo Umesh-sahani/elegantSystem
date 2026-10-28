@@ -7,7 +7,6 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 
 class ProductController extends Controller
 {
@@ -40,19 +39,18 @@ class ProductController extends Controller
 
     public function store(Request $request)
     {
-        // SKU is made from the name: "Wireless Mouse 2" -> WIRELESS-MOUSE-2
-        $sku = Str::upper(Str::slug((string) $request->name));
+        // SKU is typed by the user; store it in upper case so "pen-1" and "PEN-1" count as the same
+        $sku = strtoupper(trim((string) $request->sku));
         $request->merge(['sku' => $sku]);
 
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:150|unique:products,name',
-            'sku' => 'required|unique:products,sku',
+            'name' => 'required|string|max:150',
+            'sku' => 'required|string|max:50|unique:products,sku',
             'price' => 'required|numeric|decimal:0,2|min:0|max:9999999999.99',
             'stock_qty' => 'required|integer|min:0|max:1000000000',
         ], [
-            'name.unique' => 'A product with this name already exists.',
-            'sku.required' => 'Name must contain letters or numbers to make the SKU.',
-            'sku.unique' => 'SKU :input already exists, a product with a very similar name is already added.',
+            'sku.required' => 'SKU is required.',
+            'sku.unique' => 'This SKU already exists.',
         ]);
 
         if ($validator->fails()) {
@@ -80,11 +78,11 @@ class ProductController extends Controller
             ]);
 
         } catch (UniqueConstraintViolationException $e) {
-            // two requests saved the same name at the same moment, the DB unique index blocked the second one
+            // two requests saved the same SKU at the same moment, the DB unique index blocked the second one
             DB::rollBack();
             return response()->json([
                 'status' => false,
-                'errors' => ['name' => ['A product with this name already exists.']],
+                'errors' => ['sku' => ['This SKU already exists.']],
             ], 422);
 
         } catch (\Throwable $e) {
@@ -107,20 +105,19 @@ class ProductController extends Controller
     {
         Product::findOrFail($id); // 404 if the product does not exist
 
-        // rename = new SKU
-        $sku = Str::upper(Str::slug((string) $request->name));
+        // SKU is typed by the user; store it in upper case so "pen-1" and "PEN-1" count as the same
+        $sku = strtoupper(trim((string) $request->sku));
         $request->merge(['sku' => $sku]);
 
         // ",$id" at the end means: ignore this product's own row
         $validator = Validator::make($request->all(), [
-            'name' => "required|string|max:150|unique:products,name,$id",
-            'sku' => "required|unique:products,sku,$id",
+            'name' => 'required|string|max:150',
+            'sku' => "required|string|max:50|unique:products,sku,$id",
             'price' => 'required|numeric|decimal:0,2|min:0|max:9999999999.99',
             'stock_qty' => 'required|integer|min:0|max:1000000000',
         ], [
-            'name.unique' => 'A product with this name already exists.',
-            'sku.required' => 'Name must contain letters or numbers to make the SKU.',
-            'sku.unique' => 'SKU :input already exists, a product with a very similar name is already added.',
+            'sku.required' => 'SKU is required.',
+            'sku.unique' => 'This SKU already exists.',
         ]);
 
         if ($validator->fails()) {
@@ -154,7 +151,7 @@ class ProductController extends Controller
             DB::rollBack();
             return response()->json([
                 'status' => false,
-                'errors' => ['name' => ['A product with this name already exists.']],
+                'errors' => ['sku' => ['This SKU already exists.']],
             ], 422);
 
         } catch (\Throwable $e) {

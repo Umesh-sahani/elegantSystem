@@ -108,8 +108,9 @@
                 <select autocomplete="off" class="form-select product-select" data-field="product_id">
                     <option value="">Select product</option>
                     @foreach ($products as $product)
+                        {{-- same name can exist twice, the SKU tells them apart --}}
                         <option value="{{ $product->id }}" @disabled($product->stock_qty == 0)>
-                            {{ $product->name }} ({{ $product->sku }}) @if ($product->stock_qty == 0) — out of stock @endif
+                            {{ $product->name }} ({{ $product->sku }}) - Stock: {{ $product->stock_qty }}@if ($product->stock_qty == 0) (out of stock)@endif
                         </option>
                     @endforeach
                 </select>

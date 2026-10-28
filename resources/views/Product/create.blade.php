@@ -31,12 +31,22 @@
             <div class="card-body">
                 <div class="row g-3">
                     <div class="col-12">
-                        <label class="form-label">Product Name <span class="text-danger">*</span> <small class="text-muted fw-normal">(must be unique, SKU is made from it)</small></label>
+                        <label class="form-label">Product Name <span class="text-danger">*</span></label>
                         <div class="input-group has-validation">
                             <span class="input-group-text"><i class="bi bi-tag"></i></span>
                             <input autocomplete="off" class="form-control" name="name" type="text" placeholder="e.g. Wireless Mouse" />
                             <div class="invalid-feedback" id="err-name"></div>
                         </div>
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label">SKU <span class="text-danger">*</span> <small class="text-muted fw-normal">(must be unique)</small></label>
+                        <div class="input-group has-validation">
+                            <span class="input-group-text"><i class="bi bi-upc-scan"></i></span>
+                            <input autocomplete="off" class="form-control text-uppercase" name="sku" type="text" maxlength="50" placeholder="e.g. PEN-BLUE-02" />
+                            <div class="invalid-feedback" id="err-sku"></div>
+                        </div>
+                        <div class="form-text">Saved in upper case. Same name is allowed, the SKU tells products apart.</div>
                     </div>
 
                     <div class="col-sm-6">
@@ -70,11 +80,6 @@
 @section('customJS')
     <script>
         function showErr(field, msg) {
-            // sku comes from name: show its error under name, unless name already has an error
-            if (field === 'sku') {
-                if ($('[name="name"]').hasClass('is-invalid')) return;
-                field = 'name';
-            }
             $('[name="' + field + '"]').addClass('is-invalid');
             $('#err-' + field).text(msg);
         }
