@@ -8,7 +8,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 
 class ProductController extends Controller
 {
@@ -16,7 +15,6 @@ class ProductController extends Controller
     {
         $query = Product::with(['creator', 'editor']);
 
-        // search
         if ($request->filled('search')) {
             $search = $request->search;
 
@@ -28,7 +26,6 @@ class ProductController extends Controller
 
         $records = $query->orderBy('id', 'desc')->paginate($perPage);
 
-        // ajax request: return only the table
         if ($request->ajax()) {
             return view('Product._table', compact('records'))->render();
         }
@@ -43,10 +40,20 @@ class ProductController extends Controller
 
     public function store(Request $request)
     {
-        // SKU is made from the name, so same name = same SKU = rejected
-        $request->merge(['sku' => $this->makeSku($request->name)]);
+        // SKU is made from the name: "Wireless Mouse 2" -> WIRELESS-MOUSE-2
+        $sku = Str::upper(Str::slug((string) $request->name));
+        $request->merge(['sku' => $sku]);
 
-        $validator = Validator::make($request->all(), $this->rules(), $this->messages());
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:150|unique:products,name',
+            'sku' => 'required|unique:products,sku',
+            'price' => 'required|numeric|decimal:0,2|min:0|max:9999999999.99',
+            'stock_qty' => 'required|integer|min:0|max:1000000000',
+        ], [
+            'name.unique' => 'A product with this name already exists.',
+            'sku.required' => 'Name must contain letters or numbers to make the SKU.',
+            'sku.unique' => 'SKU :input already exists, a product with a very similar name is already added.',
+        ]);
 
         if ($validator->fails()) {
             return response()->json([
@@ -59,24 +66,29 @@ class ProductController extends Controller
         try {
             $product = Product::create([
                 'name' => trim($request->name),
-                'sku' => $request->sku,
+                'sku' => $sku,
                 'price' => $request->price,
                 'stock_qty' => $request->stock_qty,
                 'added_by' => auth()->id(),
             ]);
 
             DB::commit();
+
             return response()->json([
                 'status' => true,
                 'message' => "Product created successfully! SKU: {$product->sku}",
             ]);
 
         } catch (UniqueConstraintViolationException $e) {
-            // same name saved at the same moment by someone else, unique index blocked it
+            // two requests saved the same name at the same moment, the DB unique index blocked the second one
             DB::rollBack();
-            return $this->duplicateResponse();
+            return response()->json([
+                'status' => false,
+                'errors' => ['name' => ['A product with this name already exists.']],
+            ], 422);
 
         } catch (\Throwable $e) {
+            // any other error: nothing saved
             DB::rollBack();
             return $this->serverError($e);
         }
@@ -89,14 +101,27 @@ class ProductController extends Controller
         return view('Product.edit', compact('product'));
     }
 
+
+
     public function update(Request $request, $id)
     {
         Product::findOrFail($id); // 404 if the product does not exist
 
-        // SKU follows the name, rename = new SKU
-        $request->merge(['sku' => $this->makeSku($request->name)]);
+        // rename = new SKU
+        $sku = Str::upper(Str::slug((string) $request->name));
+        $request->merge(['sku' => $sku]);
 
-        $validator = Validator::make($request->all(), $this->rules($id), $this->messages());
+        // ",$id" at the end means: ignore this product's own row
+        $validator = Validator::make($request->all(), [
+            'name' => "required|string|max:150|unique:products,name,$id",
+            'sku' => "required|unique:products,sku,$id",
+            'price' => 'required|numeric|decimal:0,2|min:0|max:9999999999.99',
+            'stock_qty' => 'required|integer|min:0|max:1000000000',
+        ], [
+            'name.unique' => 'A product with this name already exists.',
+            'sku.required' => 'Name must contain letters or numbers to make the SKU.',
+            'sku.unique' => 'SKU :input already exists, a product with a very similar name is already added.',
+        ]);
 
         if ($validator->fails()) {
             return response()->json([
@@ -107,61 +132,34 @@ class ProductController extends Controller
 
         DB::beginTransaction();
         try {
-            // lock row so this edit does not overwrite stock reduced by an order at the same time
+            // lock the row so this edit does not overwrite stock reduced by an order at the same time
             $product = Product::whereKey($id)->lockForUpdate()->firstOrFail();
 
             $product->update([
                 'name' => trim($request->name),
-                'sku' => $request->sku,
+                'sku' => $sku,
                 'price' => $request->price,
                 'stock_qty' => $request->stock_qty,
                 'updated_by' => auth()->id(),
             ]);
 
             DB::commit();
-            return response()->json(['status' => true, 'message' => "Product updated successfully! SKU: {$product->sku}"]);
+
+            return response()->json([
+                'status' => true,
+                'message' => "Product updated successfully! SKU: {$product->sku}",
+            ]);
 
         } catch (UniqueConstraintViolationException $e) {
             DB::rollBack();
-            return $this->duplicateResponse();
+            return response()->json([
+                'status' => false,
+                'errors' => ['name' => ['A product with this name already exists.']],
+            ], 422);
 
         } catch (\Throwable $e) {
             DB::rollBack();
             return $this->serverError($e);
         }
-    }
-
-    protected function duplicateResponse()
-    {
-        return response()->json([
-            'status' => false,
-            'errors' => ['name' => ['A product with this name already exists.']],
-        ], 422);
-    }
-
-    // "Wireless Mouse 2" -> WIRELESS-MOUSE-2
-    protected function makeSku($name)
-    {
-        return Str::upper(Str::slug((string) $name));
-    }
-
-    // $id is passed on update so the product does not clash with itself
-    protected function rules($id = null)
-    {
-        return [
-            'name' => ['required', 'string', 'max:150', Rule::unique('products', 'name')->ignore($id)],
-            'sku' => ['required', Rule::unique('products', 'sku')->ignore($id)],
-            'price' => 'required|numeric|decimal:0,2|min:0|max:9999999999.99',
-            'stock_qty' => 'required|integer|min:0|max:1000000000',
-        ];
-    }
-
-    protected function messages()
-    {
-        return [
-            'name.unique' => 'A product with this name already exists.',
-            'sku.required' => 'Name must contain letters or numbers to make the SKU.',
-            'sku.unique' => 'SKU :input already exists, a product with a very similar name is already added.',
-        ];
     }
 }

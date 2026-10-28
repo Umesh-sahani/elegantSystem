@@ -111,7 +111,7 @@ class OrderController extends Controller
         foreach ($request->items as $row) {
             $qtyByProduct[$row['product_id']] = ($qtyByProduct[$row['product_id']] ?? 0) + $row['quantity'];
         }
-
+       
         DB::beginTransaction();
         try {
             // lock rows: another order for the same product waits here until we commit.
@@ -171,7 +171,7 @@ class OrderController extends Controller
             return response()->json([
                 'status' => true,
                 'message' => "Order {$order->order_no} created successfully!",
-                'redirect' => route('order.show', $order->id),
+                'redirect' => route('order.list'),
             ]);
 
         } catch (\Throwable $e) {

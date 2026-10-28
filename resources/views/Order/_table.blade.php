@@ -17,7 +17,7 @@
         </thead>
         <tbody>
             @forelse ($records as $key => $row)
-                <tr>
+                <tr>                   
                     <td class="text-center">{{ $records->firstItem() + $key }}</td>
                     <td><a href="{{ route('order.show', $row->id) }}">{{ $row->order_no }}</a></td>
                     <td>{{ $row->name }}</td>
